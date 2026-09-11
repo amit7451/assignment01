@@ -36,6 +36,8 @@ export class NatsConsumer {
       name: 'notification-service-consumer',
       maxReconnectAttempts: -1,
       reconnectTimeWait: 2000,
+      reconnectJitter: 500,
+      timeout: 10000,
     };
 
     if (config.natsToken) {

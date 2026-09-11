@@ -26,6 +26,8 @@ export class NatsPublisher {
         name: 'user-service-publisher',
         maxReconnectAttempts: -1,
         reconnectTimeWait: 2000,
+        reconnectJitter: 500,
+        timeout: 10000,
       };
 
       if (config.natsToken) {
