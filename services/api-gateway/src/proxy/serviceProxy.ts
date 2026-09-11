@@ -30,6 +30,12 @@ export function createServiceProxy(targetUrl: string, serviceName: string) {
           proxyReq.setHeader('x-user-role', req.headers['x-user-role']);
         }
 
+        // Propagate client remote IP address
+        const clientIp = req.ip || req.socket.remoteAddress;
+        if (clientIp && !proxyReq.getHeader('x-forwarded-for')) {
+          proxyReq.setHeader('x-forwarded-for', clientIp);
+        }
+
         // If body was parsed by express.json(), re-stream it to upstream
         if (req.body && Object.keys(req.body).length > 0) {
           fixRequestBody(proxyReq, req);
