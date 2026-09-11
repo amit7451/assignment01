@@ -1,0 +1,431 @@
+openapi: 3.0.3
+info:
+  title: Distributed Microservices System API
+  description: |
+    Production-grade microservices system demonstrating distributed systems principles:
+    - **API Gateway**: Reverse proxy, JWT authentication, rate limiting, and distributed tracing
+    - **User Service**: User identity and lifecycle management emitting domain events via NATS JetStream
+    - **Notification Service**: Asynchronous event consumer delivering notifications reliably with idempotency
+    - **NATS JetStream**: Secure, reliable, production-ready message broker
+  version: 1.0.0
+  contact:
+    name: Microservices Platform Team
+servers:
+  - url: http://localhost:8080
+    description: Local API Gateway
+
+paths:
+  /health:
+    get:
+      summary: Aggregated Cluster Health Check
+      description: Returns health status of Gateway, User Service, and Notification Service
+      tags:
+        - Health
+      responses:
+        '200':
+          description: All services are healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '207':
+          description: One or more upstream services degraded or down
+
+  /health/live:
+    get:
+      summary: Gateway Liveness Probe
+      description: Returns liveness status of the API Gateway process
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Gateway is alive
+
+  /api/v1/auth/register:
+    post:
+      summary: Register a new user
+      description: |
+        Creates a new user account with hashed password and emits a `user.registered` event to NATS JetStream.
+        The Notification Service will asynchronously consume this event to send a welcome email.
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: User with email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+
+  /api/v1/auth/login:
+    post:
+      summary: Authenticate user & get JWT
+      description: Validates email and password, returning a signed JWT access token.
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '401':
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many authentication attempts
+
+  /api/v1/users/me:
+    get:
+      summary: Get authenticated user profile
+      tags:
+        - Users
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+
+    delete:
+      summary: Delete account
+      description: Deletes user account and publishes `user.deleted` event to NATS JetStream.
+      tags:
+        - Users
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Account deleted successfully
+        '401':
+          description: Unauthorized
+
+  /api/v1/users/profile:
+    put:
+      summary: Update user profile
+      description: Updates user profile details and publishes `user.profile_updated` event to NATS.
+      tags:
+        - Users
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          description: Unauthorized
+
+  /api/v1/users/change-password:
+    post:
+      summary: Change user password
+      description: |
+        Updates user password and publishes `user.password_changed` event to NATS JetStream.
+        The Notification Service will asynchronously send a security alert notification.
+      tags:
+        - Users
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password changed successfully
+        '400':
+          description: Current password incorrect or new password validation failed
+        '401':
+          description: Unauthorized
+
+  /api/v1/notifications:
+    get:
+      summary: Query notification logs
+      description: Returns notification dispatch history for the authenticated user or cluster audit log.
+      tags:
+        - Notifications
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum records to return
+          schema:
+            type: integer
+            default: 50
+        - name: userId
+          in: query
+          description: Filter notifications by user ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+        '401':
+          description: Unauthorized
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Supply your JWT token obtained from `/api/v1/auth/login` or `/api/v1/auth/register`.
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: SecurePass123!
+        name:
+          type: string
+          example: Alice Wonderland
+        role:
+          type: string
+          enum: [user, admin]
+          default: user
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+        password:
+          type: string
+          format: password
+          example: SecurePass123!
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          example: Alice Cooper
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - currentPassword
+        - newPassword
+      properties:
+        currentPassword:
+          type: string
+          example: SecurePass123!
+        newPassword:
+          type: string
+          minLength: 8
+          example: BrandNewPass456!
+
+    AuthSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/UserDto'
+            tokens:
+              type: object
+              properties:
+                accessToken:
+                  type: string
+                tokenType:
+                  type: string
+                  example: Bearer
+                expiresIn:
+                  type: string
+                  example: 24h
+        meta:
+          type: object
+          properties:
+            timestamp:
+              type: string
+              format: date-time
+            correlationId:
+              type: string
+
+    UserProfileResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/UserDto'
+
+    UserDto:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 8b3f46f3-1c05-4c07-920f-b4a530eb732a
+        email:
+          type: string
+          example: alice@example.com
+        name:
+          type: string
+          example: Alice Wonderland
+        role:
+          type: string
+          example: user
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    NotificationListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            total:
+              type: integer
+              example: 3
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/NotificationRecord'
+
+    NotificationRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        eventId:
+          type: string
+        userId:
+          type: string
+        recipient:
+          type: string
+        type:
+          type: string
+          example: WELCOME_EMAIL
+        channel:
+          type: string
+          example: EMAIL
+        subject:
+          type: string
+        body:
+          type: string
+        status:
+          type: string
+          example: SENT
+        attemptCount:
+          type: integer
+          example: 1
+        createdAt:
+          type: string
+          format: date-time
+        sentAt:
+          type: string
+          format: date-time
+
+    HealthResponse:
+      type: object
+      properties:
+        gateway:
+          type: object
+        upstreamServices:
+          type: object
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+            details:
+              type: object
+        meta:
+          type: object
+          properties:
+            timestamp:
+              type: string
+            correlationId:
+              type: string

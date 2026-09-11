@@ -1,0 +1,19 @@
+{
+  "name": "@system/shared",
+  "version": "1.0.0",
+  "description": "Shared event schemas, types, and logging utilities for microservices",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.4.5"
+  }
+}

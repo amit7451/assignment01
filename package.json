@@ -1,0 +1,41 @@
+{
+  "name": "microservices-nats-system",
+  "version": "1.0.0",
+  "description": "Production-grade microservices system with User Service, Notification Service, API Gateway, and NATS JetStream",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=shared && npm run build --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down -v",
+    "docker:logs": "docker compose logs -f",
+    "test:e2e": "node scripts/test-e2e.js",
+    "start:gateway": "npm run start --workspace=services/api-gateway",
+    "start:user": "npm run start --workspace=services/user-service",
+    "start:notification": "npm run start --workspace=services/notification-service",
+    "dev:gateway": "npm run dev --workspace=services/api-gateway",
+    "dev:user": "npm run dev --workspace=services/user-service",
+    "dev:notification": "npm run dev --workspace=services/notification-service"
+  },
+  "keywords": [
+    "microservices",
+    "nats",
+    "jetstream",
+    "api-gateway",
+    "event-driven",
+    "distributed-systems",
+    "typescript",
+    "docker"
+  ],
+  "author": "Div & Amit",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.4.5"
+  }
+}

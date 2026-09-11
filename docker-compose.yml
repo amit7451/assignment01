@@ -1,0 +1,158 @@
+services:
+  # ----------------------------------------------------------------------------
+  # NATS Message Broker (JetStream Enabled)
+  # ----------------------------------------------------------------------------
+  nats:
+    image: nats:2.10-alpine
+    container_name: microservices-nats
+    command: ["-js", "-sd", "/data", "--auth", "secure_nats_token_123", "-m", "8222"]
+    ports:
+      - "4222:4222"   # Client messaging port
+      - "8222:8222"   # HTTP monitoring dashboard
+    volumes:
+      - nats_data:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # PostgreSQL Database (Multi-DB for isolation)
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: microservices-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # User Service
+  # ----------------------------------------------------------------------------
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    container_name: microservices-user-service
+    environment:
+      NODE_ENV: production
+      USER_SERVICE_PORT: 8001
+      JWT_SECRET: super_secure_jwt_secret_key_change_in_production_32chars
+      JWT_EXPIRES_IN: 24h
+      NATS_URL: nats://nats:4222
+      NATS_TOKEN: secure_nats_token_123
+      USER_DB_TYPE: postgres
+      USER_DATABASE_URL: postgres://postgres:postgres@postgres:5432/user_db
+    ports:
+      - "8001:8001"
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # Notification Service
+  # ----------------------------------------------------------------------------
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    container_name: microservices-notification-service
+    environment:
+      NODE_ENV: production
+      NOTIFICATION_SERVICE_PORT: 8002
+      NATS_URL: nats://nats:4222
+      NATS_TOKEN: secure_nats_token_123
+      NOTIFICATION_DB_TYPE: postgres
+      NOTIFICATION_DATABASE_URL: postgres://postgres:postgres@postgres:5432/notification_db
+      EMAIL_PROVIDER: mock
+      EMAIL_FROM: noreply@microservices.system
+      NOTIFICATION_DURABLE_NAME: notification-service-worker
+    ports:
+      - "8002:8002"
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # API Gateway
+  # ----------------------------------------------------------------------------
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: microservices-api-gateway
+    environment:
+      NODE_ENV: production
+      GATEWAY_PORT: 8080
+      JWT_SECRET: super_secure_jwt_secret_key_change_in_production_32chars
+      USER_SERVICE_URL: http://user-service:8001
+      NOTIFICATION_SERVICE_URL: http://notification-service:8002
+      CORS_ORIGIN: "*"
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX_REQUESTS: 100
+    ports:
+      - "8080:8080"
+    depends_on:
+      user-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  nats_data:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge
