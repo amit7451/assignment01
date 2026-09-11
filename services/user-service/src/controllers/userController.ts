@@ -4,14 +4,14 @@ import { ApiResponse } from '@system/shared';
 import { UserService } from '../services/userService';
 
 const registerSchema = z.object({
-  email: z.string().email({ message: 'Invalid email address' }),
+  email: z.string().email({ message: 'Invalid email address' }).toLowerCase().trim(),
   password: z.string().min(8, { message: 'Password must be at least 8 characters long' }),
-  name: z.string().min(2, { message: 'Name must be at least 2 characters' }),
+  name: z.string().min(2, { message: 'Name must be at least 2 characters' }).trim(),
   role: z.enum(['user', 'admin']).optional(),
 });
 
 const loginSchema = z.object({
-  email: z.string().email({ message: 'Invalid email address' }),
+  email: z.string().email({ message: 'Invalid email address' }).toLowerCase().trim(),
   password: z.string().min(1, { message: 'Password is required' }),
 });
 
