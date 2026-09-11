@@ -42,3 +42,8 @@ Thumbs.db
 # Coverage directory used by tools like istanbul
 coverage/
 .nyc_output/
+
+# Archives
+*.zip
+*.tar.gz
+*.tgz
